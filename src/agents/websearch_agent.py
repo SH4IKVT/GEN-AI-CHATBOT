@@ -9,23 +9,21 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain import HuggingFaceHub  # <-- use free Hub API
 
 # ---------- Setup ----------
 load_dotenv()
-HF_TOKEN = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if not HF_TOKEN:
-    st.error("⚠️ Add HUGGINGFACEHUB_API_TOKEN to your .env")
-    st.stop()
 
-VECTOR_DB_FOLDER = "web_vectorstore"
+VECTOR_DB_FOLDER = "web_vectorstore"  # local folder inside your project
 
 def clean_text(text: str) -> str:
+    """Basic cleaning: remove links, non-ascii, extra spaces"""
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"http\S+", "", text)
     text = re.sub(r"[^\x00-\x7F]+", "", text)
     return text.strip()
 
+# ---------- UI ----------
 st.title("🌐 Web RAG: URL-based Document QA")
 st.write("Enter URLs to scrape, process, and query.")
 
@@ -80,16 +78,10 @@ if Path(f"{VECTOR_DB_FOLDER}/index.faiss").exists():
     )
 
     with st.spinner("🚀 Loading language model..."):
-        # Important bits:
-        # 1) Use task='text2text-generation' for FLAN
-        # 2) Use max_new_tokens instead of max_length
-        llm = HuggingFaceEndpoint(
-            repo_id="google/flan-t5-base",
-            task="text2text-generation",
-            max_new_tokens=256,
-            temperature=0.3,
-            top_p=0.95,
-            return_full_text=False,
+        # ✅ Free Hugging Face Hub model (doesn't need token for public models)
+        llm = HuggingFaceHub(
+            repo_id="google/flan-t5-base",  # free text2text model
+            model_kwargs={"temperature": 0.3, "max_new_tokens": 256}
         )
 
     retriever = db.as_retriever(search_kwargs={"k": 4})

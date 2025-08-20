@@ -9,21 +9,23 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
-from langchain import HuggingFaceHub  # <-- use free Hub API
+from langchain.llms import HuggingFacePipeline
+
+from transformers import pipeline
 
 # ---------- Setup ----------
-load_dotenv()
+# ---------- Setup ----------
+BASE_DIR = Path(__file__).resolve().parent
+VECTOR_DB_FOLDER = BASE_DIR / "vector_db"   # changed from vectorstore → vector_db
 
-VECTOR_DB_FOLDER = "web_vectorstore"  # local folder inside your project
+load_dotenv(BASE_DIR / ".env")
 
 def clean_text(text: str) -> str:
-    """Basic cleaning: remove links, non-ascii, extra spaces"""
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"http\S+", "", text)
     text = re.sub(r"[^\x00-\x7F]+", "", text)
     return text.strip()
 
-# ---------- UI ----------
 st.title("🌐 Web RAG: URL-based Document QA")
 st.write("Enter URLs to scrape, process, and query.")
 
@@ -66,23 +68,24 @@ if st.button("Fetch & Process Data"):
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     db = FAISS.from_documents(chunks, embeddings)
     db.save_local(VECTOR_DB_FOLDER)
-    st.success("✅ Data processed and stored in vector DB!")
+    st.success(f"✅ Data processed and stored in vector DB at {VECTOR_DB_FOLDER}")
 
 # ---------- QA ----------
-if Path(f"{VECTOR_DB_FOLDER}/index.faiss").exists():
+if (VECTOR_DB_FOLDER / "index.faiss").exists():
     st.subheader("💬 Ask Questions from URLs")
 
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    db = FAISS.load_local(
-        VECTOR_DB_FOLDER, embeddings, allow_dangerous_deserialization=True
-    )
+    db = FAISS.load_local(VECTOR_DB_FOLDER, embeddings, allow_dangerous_deserialization=True)
 
     with st.spinner("🚀 Loading language model..."):
-        # ✅ Free Hugging Face Hub model (doesn't need token for public models)
-        llm = HuggingFaceHub(
-            repo_id="google/flan-t5-base",  # free text2text model
-            model_kwargs={"temperature": 0.3, "max_new_tokens": 256}
+        # Use a free local pipeline model (small)
+        generator = pipeline(
+            "text2text-generation",
+            model="google/flan-t5-small",
+            tokenizer="google/flan-t5-small",
+            max_new_tokens=256
         )
+        llm = HuggingFacePipeline(pipeline=generator)
 
     retriever = db.as_retriever(search_kwargs={"k": 4})
     qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
